@@ -7,14 +7,16 @@ from flask_login import UserMixin, login_user, LoginManager, login_required, log
 application = Flask(__name__)
 application.config["SQLALCHEMY_DATABASE_URI"] = 'sqlite:///ecommerce.db'
 application.config["SECRET_KEY"] = "ADLLFND**F34dd"
+# Disable event system to avoid overhead warnings
+application.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 
 login_manager = LoginManager()
 db = SQLAlchemy(application)
+
 login_manager.init_app(application)
 login_manager.login_view = "login"
 CORS(application)
-
 
 
 class User(db.Model, UserMixin):
@@ -36,10 +38,15 @@ class CartItem(db.Model):
     product_id = db.Column(db.Integer, db.ForeignKey('product.id'), nullable=False)
     
 
+# Create tables AFTER models are declared so production doesn't 500 on first access
+with application.app_context():
+    db.create_all()
+
 
 @login_manager.user_loader
 def load_user(user_id):
-    return User.query.get(user_id)
+    # Ensure type compatibility with primary key
+    return User.query.get(int(user_id))
 
 
 @application.route("/logout", methods=["POST"])
@@ -48,6 +55,11 @@ def logout():
     logout_user()
     return "Logout realizado."
             
+
+@application.route("/")
+def initial():
+    return "API up!"
+
 
 @application.route("/login", methods=["POST"])
 def login():
@@ -69,12 +81,6 @@ def login():
         return jsonify({"message": "Login realizado com sucesso!"}), 200
 
     return jsonify({"message": "Acesso não autorizado!"}), 401
-
-
-#Definir rota raiz
-@application.route("/")
-def hello():
-    return 'Hello World'
 
 
 @application.route("/api/products/add", methods=["POST"])
@@ -161,6 +167,7 @@ def get_all_product():
 
 
 @application.route("/api/cart/add/<int:product_id>", methods=['POST'])
+@login_required
 def add_to_cart(product_id):
     user = User.query.get(int(current_user.id))
 
@@ -173,6 +180,7 @@ def add_to_cart(product_id):
     return jsonify({"message": "Falha ao adicionar produto ao carrinho."}), 400
 
 @application.route("/api/cart/remove/<int:product_id>", methods=["DELETE"])
+@login_required
 def remove_from_cart(product_id):
     cart_item = CartItem.query.filter_by(user_id=current_user.id, product_id=product_id).first()
     if(cart_item):
